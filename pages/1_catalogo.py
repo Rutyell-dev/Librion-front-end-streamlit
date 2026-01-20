@@ -12,20 +12,21 @@ def fetch_books(filters = None):
         response = librion_api("POST", "/books/search", json=filters)
 
     else:
-        response = librion_api("GET", "/books")
+        response = librion_api("GET", "/books/")
 
     if response["success"]:
         return response["data"]
     
-    st.error("Erro na requisição dos livros")
-    st.stop()       
+    st.toast("Erro na requisição dos livros")
+    st.rerun()       
         
 # Busca na session os filtros selecionados
 def filter_books():
     filters = {
-        "title" : st.session_state.title if not "" else None,
+        "title" : st.session_state.get("title"),
         "library_ids": list(map(lambda l:int(l["id"]), st.session_state.libraries))
     }
+
 
     # Busca na API os livros filtrados e salva em uma "variável" de estado "books"
     st.session_state.books = fetch_books(filters)
@@ -40,7 +41,14 @@ def clear_filters():
 # Formulário para filtragem
 def render_filters():
     # bibliotecas da API
-    response = librion_api("GET", "/libraries")
+    response = librion_api("GET", "/libraries/")
+    
+  # Inicializa session_state se ainda não existir
+    if "title" not in st.session_state:
+        st.session_state.title = None
+
+    if "libraries" not in st.session_state:
+        st.session_state.libraries = []
 
     if response["success"]:
         all_libraries = response["data"]
@@ -49,10 +57,10 @@ def render_filters():
             col1, col2 = st.columns([2, 1])
 
             with col1:
-                st.text_input("Título", placeholder="Ex: Viagem ao Centro da Terra", key="title")
+                title = st.text_input("Título", placeholder="Ex: Viagem ao Centro da Terra", key="title")
             
             with col2:
-                st.multiselect("Filtra por biblioteca",placeholder="Selecionar" , options=all_libraries, format_func= lambda l:l["name"], key="libraries")
+                libraries = st.multiselect("Filtra por biblioteca",placeholder="Selecionar" , options=all_libraries, format_func= lambda l:l["name"], key="libraries")
 
             with st.container():
                 __, center, __ = st.columns([4,2,4])
@@ -62,7 +70,7 @@ def render_filters():
                     
                     with col1:
                         submit = st.button("Buscar",type='primary',width='stretch', on_click=filter_books)
-                    
+                            
                     with col2:
                         clear = st.button("Limpar Filtros", type='secondary', width='stretch', on_click=clear_filters)
     else:
@@ -70,7 +78,7 @@ def render_filters():
         st.stop()
 
 # Modal com detalhes de um livro
-@st.dialog("Detalhes", width='small')
+@st.dialog("Detalhes", width='medium')
 def modal_details(book:dict):
     image = book.get("image")
 
@@ -78,11 +86,21 @@ def modal_details(book:dict):
 
     with center:
         if image and image != "(vazio)":
-            st.image(book.get("image"), width='stretch')
+            st.image(book["image"], width='stretch')
 
     st.header(book.get("title"))
     st.text(book.get("author"))
     st.text(book.get("description"))
+
+# Requisitar um empréstimo
+def request_loan(copy_id):
+    response = librion_api("POST", "/readers/me/loans/", json={"copy_id": copy_id}, token=st.session_state.get("auth_token"))
+    
+    if response["success"]:
+        st.toast("Empréstimo solicitado!")
+    
+    else:
+        st.toast(response["error"]["detail"])
 
 # Modal com o nome de todas as bibliotecas que tem o livro disponível
 @st.dialog("Empréstimo", width="medium")
@@ -93,41 +111,64 @@ def modal_loan(book:dict):
         copies = response["data"]
 
         for i in range(len(copies)):
-            col1, col2, col3 = st.columns([3,2,1])
+            with st.container(border=True, vertical_alignment='center'):
+                col1, col2, col3 = st.columns([3,2,1])
+                
+                copy = copies[i]
+                is_available = copy["quantity_available"] > 0
+                
+                with col1:
+                    st.markdown(copy["library"]["name"], text_alignment="left")
             
-            copy = copies[i]
-            is_available = copy["quantity_available"] > 0
-            with col1:
-                st.subheader(copy["library"]["name"], text_alignment="left")
-        
-            with col2:
-                if is_available:
-                    st.success("Disponível", width='stretch')
-                else:
-                    st.error("Indisponível", width='stretch')
-            
-            with col3:
-                if is_available:
-                    st.button("Solicitar", key=(copy["id_book"]) * i, width='stretch', type='primary')
+                with col2:
+                    if is_available:
+                        st.success("Disponível")
+                    else:
+                        st.error("Indisponível")
+                
+                with col3:
+                    if is_available:
+                        if st.button("Solicitar", key=(copy["id"]) * i, width='stretch', type='primary'):
+                            request_loan(copy["id"])
     else:
         st.error("Errro na requisição das cópias")
         st.stop()
 
 # Layout de um livro
 def card_book(book:dict):
-    with st.container(border=True, height="stretch"):
+    with st.container(border=True, height="stretch", horizontal_alignment='center'):
         url_image = book.get("image")
 
         if url_image and not url_image == "(vazio)":
-            st.image(url_image, width='stretch')
+            st.image(url_image, width=150)
+        
+        else:
+            st.markdown(
+                """
+                    <div style="
+                        width: 100%;
+                        height: 250px;
+                        background-color: #e0e0e0;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: black;
+                        border-radius: 8px;
+                    ">
+                        Sem capa
+                    </div>
+                """,
+                unsafe_allow_html=True
+            )
     
         st.text(book["title"])
-        st.caption(f"{book['author']}")
+        st.caption(f"📚 {book['author']}")
         
         btn_col1, btn_col2 = st.columns([1, 1])
         with btn_col1:
             user = st.session_state.get("user")
-            disable_button = True if not user or user["admin"] else False
+            is_admin = st.session_state.get("is_admin")
+            disable_button = True if not user or is_admin else False
 
             btn_loan = st.button("Empréstimo", type="primary", width='stretch', key=f"loan_{book["id"]}", disabled=disable_button)
 
@@ -159,11 +200,11 @@ def render_grid(books, cols_per_row = 5):
 
 # Renderiza a página
 def render_page():
+    render_header()
+
     # Criar uma variável de "estado" para a lista de livros    
     if "books" not in st.session_state:
         st.session_state.books = fetch_books()
-
-    render_header()
     
     st.title("Catálogo")
     st.write("Explore o acervo completo da Rede Municipal de Bibliotecas de Crato-CE")

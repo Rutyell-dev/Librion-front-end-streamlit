@@ -41,11 +41,17 @@ def user_header():
 
     with col4:
         if st.button("Sair", type="tertiary", width="stretch"):
-            pass
+            st.session_state.user = None
+            st.session_state.is_admin = None
+            st.session_state.auth_token = None
+            
+            st.switch_page("home.py")
 
 # Cabeçalho de admin
 def admin_header():
     cols = st.columns(7)
+    user_email = st.session_state.get("user", {}).get("email")
+    is_manager = True if user_email == "ifce@gmail.com" else False 
 
     with cols[0]:
         st.markdown("### 📘 Librion")
@@ -60,30 +66,35 @@ def admin_header():
             st.switch_page("pages/5_admin_usuarios.py")
     
     with cols[3]:
-        if st.button("🏢 Bibliotecas", use_container_width=True):
+        if st.button("🏢 Bibliotecas", use_container_width=True, disabled=not is_manager):
             st.switch_page("pages/6_admin_bibliotecas.py")
     
     with cols[5]:
-        if st.button("👤 Minha Conta", type="primary", use_container_width=True):
-            st.switch_page("pages/7_minha_conta.py")
+        st.caption(st.session_state.get("user", {}).get("name"))
 
     with cols[6]:
         if st.button("Sair", type="tertiary", width="stretch"):
-            pass
+            st.session_state.user = None
+            st.session_state.is_admin = None
+            st.session_state.auth_token = None
+            
+            st.switch_page("home.py")
 
 # Renderiza o cabeçalho
 def render_header():
     user = st.session_state.get("user")
+    is_admin = st.session_state.get("is_admin")
     
     if not user:
         visitor_header()
     
-    elif user["admin"]:
+    elif is_admin:
         admin_header()
     
     else:
         user_header()
 
+# Renderiza os carda da página home
 def render_cards():
     f1, f2, f3, f4 = st.columns(4)
 

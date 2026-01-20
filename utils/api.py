@@ -2,10 +2,16 @@ import requests
 
 BASE_URL = "http://127.0.0.1:8000"
 
-def librion_api(method: str,route: str, *,params=None,json=None,data=None,headers=None,timeout=10):
+def librion_api(method: str,route: str, *,params=None,json=None,token=None, data=None,timeout=10):
     url = BASE_URL + route
 
-    # monta apenas o que não é None
+    # Salvva o token
+    headers = {}
+    
+    if token:
+        headers["Authorization"] =  f"Bearer {token}"
+
+    # Monta o objeto
     kwargs = {
         "params": params,
         "json": json,

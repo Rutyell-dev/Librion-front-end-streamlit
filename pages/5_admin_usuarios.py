@@ -1,57 +1,104 @@
 import streamlit as st
 from components import admin_header
+from utils import librion_api
 
-# 1. Configuração da página e Menu
+#configuracao da pagina
 st.set_page_config(page_title="Admin - Usuários", layout="wide")
-admin_header()
 
-# Verificação de segurança simples (opcional, mas recomendada)
-if not st.session_state.get("logado") or st.session_state.get("perfil") != "admin":
-    st.error("Acesso restrito a administradores.")
-    st.stop()
+#verificação de login
+def check_login():
+    user = st.session_state.get("user")
+    is_admin = st.session_state.get("is_admin")
 
-st.title("👥 Gestão de Usuários")
+    if not user or not is_admin:
+        st.error("Acesso negado! Esta página é restrita a administradores.")
+        st.button("Voltar para Home", on_click=lambda: st.switch_page("Home.py"))
+        st.stop()
 
-# Abas para organização
-tab1, tab2 = st.tabs(["🆕 Cadastrar Novo", "📋 Lista de Usuários"])
+# Busca os leitores cadastrados no banco de dados
+def fetch_readers():
+    response = librion_api("GET", "/libraries/me/readers", token=st.session_state.get("auth_token"))
+    
+    if response.get("success"):
+        st.session_state.library_readers = response["data"]
+        return response["data"]
+    
+    else:
+        st.info("Nenhum leitor cadastrado na biblioteca")
+        st.stop()
 
-# --- ABA 1: CADASTRO ---
-with tab1:
+#POST Reader
+def create_reader(name, email, cep, password):
+    json = {
+        "name": name,
+        "email": email,
+        "cep": cep,
+        "password": password
+    }
+
+    token = st.session_state.get("auth_token")
+    response = librion_api("POST", "/libraries/me/readers", json=json, token=token)
+
+    if response["success"]:
+        st.toast("Usuário cadastrado!")
+        st.balloons()
+    else:
+        st.toast(f"Erro no cadastro: {response['error']['detail']}")
+
+#renderiza o formulário do escritor
+def render_reader_form():
     with st.container(border=True):
         st.subheader("Informações do Novo Usuário")
-        
+
         col1, col2 = st.columns(2)
+
         with col1:
-            nome = st.text_input("Nome Completo", placeholder="Ex: José da Silva")
-            email = st.text_input("E-mail de Acesso", placeholder="exemplo@email.com")
-        
+            nome = st.text_input("Nome Completo")
+            email = st.text_input("E-mail")
+
         with col2:
-            tipo = st.radio("Tipo de Perfil", ["Leitor", "Administrador"], horizontal=True)
-            st.info("🔑 **Senha Padrão:** `librion123`  \n*O usuário será obrigado a alterá-la no primeiro acesso.*")
+            cep = st.text_input("CEP")
+            senha = st.text_input("Senha", type="password")
 
         if st.button("Criar Conta", type="primary", use_container_width=True):
-            if nome and email:
-                # Simulando a lógica de salvar no Banco de Dados
-                # No futuro, aqui teremos o POST para o FastAPI enviando:
-                # { "nome": nome, "email": email, "perfil": tipo, "senha": "librion123", "trocar_senha": True }
-                
-                st.success(f"Conta para **{nome}** criada com sucesso!")
-                st.balloons()
+
+            if not nome.strip() or not email.strip() or not cep.strip() or not senha.strip():
+                st.warning("Preencha todos os campos!")
             else:
-                st.warning("⚠️ Por favor, preencha o nome e o e-mail.")
+                create_reader(nome, email, cep, senha)
 
-# --- ABA 2: LISTAGEM ---
-with tab2:
+# Renderiza os usuário cadastros
+def render_list_readers():
     st.subheader("Usuários Cadastrados")
-    
-    # Simulação de dados vindo do SQL (adicionada a coluna de Primeiro Acesso)
-    dados_usuarios = [
-        {"ID": 1, "Nome": "João Silva", "Perfil": "Leitor", "Status": "Ativo", "Reset Senha": "Não"},
-        {"ID": 2, "Nome": "Maria Admin", "Perfil": "Admin", "Status": "Ativo", "Reset Senha": "Não"},
-        {"ID": 3, "Nome": "Novo Usuário", "Perfil": "Leitor", "Status": "Pendente", "Reset Senha": "Sim"},
-    ]
-    
-    # Exibe a tabela
-    st.dataframe(dados_usuarios, use_container_width=True, hide_index=True)
+    readers = fetch_readers()
 
-    st.caption("Nota: 'Reset Senha = Sim' indica que o usuário ainda não alterou a senha padrão.")
+    #lista visual bonita
+    for u in readers:
+        with st.container(border=True):
+            col1, col2 = st.columns([3, 1])
+
+            with col1:
+                st.markdown(f"### {u['name']}")
+                st.write(f"📧 **Email:** {u['email']}")
+                st.write(f"📍 **CEP:** {u['cep']}")
+
+            with col2:
+                st.write("")
+                st.write("")
+                st.button("🗑 Excluir", key=u["email"])
+
+def render_page():
+    check_login()
+    
+    admin_header()
+
+    st.title("👥 Gestão de Usuários")
+    tab1, tab2 = st.tabs(["🆕 Cadastrar Novo", "📋 Lista de Usuários"])
+    
+    with tab1:
+        render_reader_form()
+    
+    with tab2:
+        render_list_readers()
+
+render_page()
